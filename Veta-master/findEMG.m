@@ -1,6 +1,7 @@
 function findEMG(filename)
 % Authors: Nick Jackson (njackson@uoregon.edu) & Ian Greenhouse
-%  (img@uoregon.edu)
+% By Cazmon & Jessica  
+
 % 
 % This function identifies various EMG/TMS events in prerecorded EMG data.
 % 
