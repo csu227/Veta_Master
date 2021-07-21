@@ -55,11 +55,19 @@ if ~use_command_line
     parameters.MEP = 1; % Detect MEPs: 0 = no, 1 = yes
     parameters.artchan_index = 3;
     parameters.MEP_channels = [1];
-%     parameters.CSP = 0; % Detect CSP: 0 = no, 1 = yes
-%     parameters.CSP_channels = [0];
-    parameters.MEP_std_or_chngpts = 1; % 0 = std of baseline, 1 = findchangepts
+    
+ %Silent Period   
+    
+    parameters.CSP = 1; % Detect CSP: 0 = no, 1 = yes
+     parameters.CSP_channels = [0];
+   
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%     
+     parameters.MEP_std_or_chngpts = 1; % 0 = std of baseline, 1 = findchangepts
 end
 %% define analysis parameters
+%creates a structure for just parameters. Can set a structure by making a
+%variable with anything after a period
+
 %edit these to suit your analysis needs
 parameters.sampling_rate = 1000; % samples per second (Hz) &chnaged from 5000 to 100 for our study 
 % parameters.emg_burst_threshold = .3; % raw threshold in V to consider for EMG
@@ -105,29 +113,33 @@ if use_command_line
 
     
     parameters.MEP = input('Do you want to detect motor evoked potentials (MEPs)? yes(1) or no(0): ');
+    parameters.CSP = input('Do you want to detect cortical silent period (CSP) epochs? yes(1) or no(0): ');
 
-    if parameters.MEP | parameters.CSP
+    if parameters.MEP | parameters.CSP %  "|" = "=="
         trials.artloc(:,1) = 0;
         trials.preTMS_period_start(:,1) = 0;
         
 %Commented out the question for artifact channel        
-        if ~isfield(parameters,'artchan_index')
-            parameters.artchan_index = input('Enter TMS artefact channel #: ');
-        end
+%         if ~isfield(parameters,'artchan_index')
+%             parameters.artchan_index = input('Enter TMS artefact channel #: ');
+%         end
     end
     
     if parameters.MEP & ~isfield(parameters, 'MEP_channels')
         parameters.MEP_channels = input('Enter MEP channels (e.g. [2] or [1 3 5]): ');
     end
+       if parameters.CSP & ~isfield(parameters,'CSP_channels')
+        parameters.CSP_channels = input('Enter CSP channels (e.g. [2] or [1 3 5]): ');
+    end
     
     parameters.MEP_std_or_chngpts = 1; % 0 = std of baseline, 1 = findchangepts
 end
 %% find photodiode event %% replace for pinchmeter later
-if any(strcmp('photodiode', trials.Properties.VariableNames))
-    trials = findDiode(trials,parameters);
-else
-    trials.stim_onset(:,1) = zeros;
-end
+% if any(strcmp('photodiode', trials.Properties.VariableNames))
+%     trials = findDiode(trials,parameters);
+% else
+%     trials.stim_onset(:,1) = zeros;
+% end
 %% Find TMS, MEP, and EMG events
 trials = findEvents(trials,parameters); %findEvents() function is nested at the bottom 
 %% save file
@@ -136,15 +148,15 @@ uisave({'trials','subject','parameters'},outfile);
 end
 %% HELPER FUNCTIONS
 %% Find Diode
-function trials=findDiode(trials,parameters)
-% detects large changes in photodiode signal
-    for i=1:height(trials)
-        %% photodiode event
-        diff_diode = diff(trials.photodiode{i});
-        [max_diode_value,max_diode_index] = max(diff_diode);
-        trials.stim_onset(i,1) = max_diode_index/parameters.sampling_rate; % location for GUI
-    end
-end
+% function trials=findDiode(trials,parameters)
+% % detects large changes in photodiode signal
+%     for i=1:height(trials)
+%         %% photodiode event
+%         diff_diode = diff(trials.photodiode{i});
+%         [max_diode_value,max_diode_index] = max(diff_diode);
+%         trials.stim_onset(i,1) = max_diode_index/parameters.sampling_rate; % location for GUI
+%     end
+% end
 
 %% Find TMS, MEP, CSP, and EMG
 function trials = findEvents(trials,parameters) % parameterize these
@@ -152,9 +164,9 @@ function trials = findEvents(trials,parameters) % parameterize these
 %% initialize trials columns
 
 % commenting out artchan index
-if parameters.artchan_index
-    trials.artloc(:,1) = 0;
-end
+% if parameters.artchan_index
+%     trials.artloc(:,1) = 0;
+% end
 
 if parameters.MEP
     for chan = 1:length(parameters.MEP_channels)
@@ -165,7 +177,12 @@ if parameters.MEP
     end
 end
 
-
+if parameters.CSP
+    for chan = 1:length(parameters.CSP_channels)
+        trials.(['ch', num2str(parameters.CSP_channels(chan)), '_CSP_onset'])(:,1) = 0;
+        trials.(['ch', num2str(parameters.CSP_channels(chan)), '_CSP_offset'])(:,1) = 0;
+    end
+end
 
 %% identify MEP and non-MEP channels
 %dont think we need this since all channels are MEP Channels
@@ -184,13 +201,13 @@ for i = 1:height(trials)
 
 % Commented out the use of artifact channel. Setting an index location. Currently 101 (time = 0)          
             
-            if parameters.artchan_index
-                artchannel = trials.(['ch', num2str(parameters.artchan_index)]){i,1};
-                [artefact_value, TMS_artefact_sample_index] = max(artchannel); %max(abs(artchannel));
-            else
-                TMS_artefact_sample_index = find(MEPchannel > parameters.tms_artefact_threshold,1);
-                artefact_value = abs(MEPchannel(TMS_artefact_sample_index));
-            end                                    
+%             if parameters.artchan_index
+%                 artchannel = trials.(['ch', num2str(parameters.artchan_index)]){i,1};
+%                 [artefact_value, TMS_artefact_sample_index] = max(artchannel); %max(abs(artchannel));
+%             else
+%                 TMS_artefact_sample_index = find(MEPchannel > parameters.tms_artefact_threshold,1);
+%                 artefact_value = abs(MEPchannel(TMS_artefact_sample_index));
+%             end                                    
 
 
 %Test to try a set value for the artefact index in this case where to start
@@ -284,7 +301,54 @@ for i = 1:height(trials)
                 
             end
         end
-    end          
+    end    
+    
+     %% find CSP
+     %START HERE TODAY%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    if parameters.CSP
+        for chan = 1:length(parameters.CSP_channels)
+            if trials.artloc(i,1)
+                csp_signal = trials.(['ch', num2str(parameters.CSP_channels(chan))]){i,1};
+                [IUPPER, ILOWER, UPPERSUM] = cusum(abs(csp_signal));
+                
+                
+                if sum(ismember(parameters.CSP_channels, parameters.MEP_channels))
+                    trials.(['ch', num2str(parameters.CSP_channels(chan)) '_CSP_onset'])(i,1) = trials.artloc(i,1) + ...
+                                                                                                trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_offset'])(i,1);
+                    csp_start_loc = trials.(['ch', num2str(parameters.CSP_channels(chan)) '_CSP_onset'])(i,1) * parameters.sampling_rate;
+                else                    
+                    [peak1, csp_start_loc] = findpeaks(UPPERSUM, 'MinPeakProminence', 9, 'NPeaks', 1);
+                    trials.(['ch', num2str(parameters.CSP_channels(chan)) '_CSP_onset'])(i,1) = csp_start_loc/parameters.sampling_rate;
+                end
+                if csp_start_loc
+                    [peak2, csp_end_position] = findpeaks(-1*UPPERSUM(round(csp_start_loc):end), 'MinPeakProminence', 5, 'NPeaks', 1); % default 5, lower may suffice
+                    csp_end_loc = csp_end_position + csp_start_loc;
+                end
+                if csp_end_loc
+                    trials.(['ch', num2str(parameters.CSP_channels(chan)) '_CSP_offset'])(i,1) = csp_end_loc/parameters.sampling_rate;
+                end
+            else
+                artchannel = trials.(['ch', num2str(parameters.artchan_index)]){i,1};
+                [artefact_value, TMS_artefact_sample_index] = max(abs(artchannel));
+                
+                if artefact_value > abs(parameters.tms_artefact_threshold) % TMS artefact must exceed a threshold to be classified as an artefact
+                    trials.artloc(i,1) = TMS_artefact_sample_index/parameters.sampling_rate;%artefact location scaled for visualization
+                    csp_signal = trials.(['ch', num2str(parameters.CSP_channels(chan))]){i,1};
+                    [IUPPER, ILOWER, UPPERSUM] = cusum(abs(csp_signal));
+                    [peak1, csp_start_loc] = findpeaks(UPPERSUM,'MinPeakProminence', 9, 'NPeaks', 1);
+                    if csp_start_loc
+                        [peak2, csp_end_position] = findpeaks(-1*UPPERSUM(csp_start_loc:end), 'MinPeakProminence', 5, 'NPeaks', 1); % default 5, lower may suffice
+                        csp_end_loc = csp_end_position + csp_start_loc;
+                    end
+                    
+                    if csp_start_loc & csp_end_loc
+                        trials.(['ch', num2str(parameters.CSP_channels(chan)) '_CSP_onset'])(i,1) = csp_start_loc/parameters.sampling_rate;
+                        trials.(['ch', num2str(parameters.CSP_channels(chan)) '_CSP_offset'])(i,1) = csp_end_loc/parameters.sampling_rate;
+                    end
+                end
+            end            
+        end
+    end
 end % end trial loop
 
 end % end findEvent function
