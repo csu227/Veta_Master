@@ -48,6 +48,11 @@ function findEMG(filename)
 %         updated trials table with addition columns that contain calculated
 %         metrics itemized above
 %% define data parameters
+%index 101 corresponds to time 0(.1s if starting at 0 and not negatives)
+%which is time of stimulus
+%%start mep search at .115 and end at .165
+
+
 use_command_line = 1;%toggle bool to suit parameter input preferences
 if ~use_command_line
 %     parameters.EMG = 1; % Detect EMG bursts: 0 = no, 1 = yes
@@ -170,8 +175,8 @@ function trials = findEvents(trials,parameters) % parameterize these
 
 if parameters.MEP
     for chan = 1:length(parameters.MEP_channels)
-        trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_time'])(:,1) = 0;
-        trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_latency'])(:,1) = 0;
+        trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_time'])(:,1) = 0; % adding to structure for trials. middle portion just is calling a previous structure to get value for 'ch' and adding outcome variables
+        trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_latency'])(:,1) = 0;                                                                                                                                                                 
         trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_offset'])(:,1) = 0;
         trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_area'])(:,1) = 0;
     end
@@ -197,7 +202,7 @@ for i = 1:height(trials)
     %% find TMS artefact and MEP
     if parameters.MEP
         for chan = 1:length(parameters.MEP_channels)
-            MEPchannel = trials.(['ch', num2str(parameters.MEP_channels(chan))]){i,1};
+            MEPchannel = trials.(['ch', num2str(parameters.MEP_channels(chan))]){i,1}; %pulls first sweet from first channel
 
 % Commented out the use of artifact channel. Setting an index location. Currently 101 (time = 0)          
             
@@ -212,7 +217,7 @@ for i = 1:height(trials)
 
 %Test to try a set value for the artefact index in this case where to start
 %searching for MEP
-            TMS_artefact_sample_index = 0;
+            TMS_artefact_sample_index = 115;
 
             %set range to look for preMEP EMG activity to calculate RMS
             lower_rms_bound = -99;%TMS_artefact_sample_index - (parameters.pre_TMS_reference_window * parameters.sampling_rate);
@@ -222,12 +227,13 @@ for i = 1:height(trials)
             if lower_rms_bound < 0
                 lower_rms_bound = 1;
             end
-            preTMS_reference_data = MEPchannel(lower_rms_bound:upper_rms_bound);
+            preTMS_reference_data = MEPchannel(lower_rms_bound:upper_rms_bound); %pulls out baseline
             RMS_of_preMEP_window = rms(preTMS_reference_data);
-            trials.(['ch',num2str(parameters.MEP_channels(chan)),'_RMS_preMEP'])(i,1) = RMS_of_preMEP_window;
+            
+            trials.(['ch',num2str(parameters.MEP_channels(chan)),'_RMS_preMEP'])(i,1) = RMS_of_preMEP_window; %stores rms of baseline in structure
 
             % reject trial if RMS is above tolerance threshold
-            if RMS_of_preMEP_window < parameters.RMS_preMEP_EMG_tolerance
+            if RMS_of_preMEP_window < parameters.RMS_preMEP_EMG_tolerance  %determines whether to 
                 trials.trial_accept(i,1)=1;
             else
                 trials.trial_accept(i,1)=0;
