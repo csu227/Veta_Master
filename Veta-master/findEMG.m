@@ -220,8 +220,8 @@ for i = 1:height(trials)
             TMS_artefact_sample_index = 115;
 
             %set range to look for preMEP EMG activity to calculate RMS
-            lower_rms_bound = -99;%TMS_artefact_sample_index - (parameters.pre_TMS_reference_window * parameters.sampling_rate);
-            upper_rms_bound = 0; %TMS_artefact_sample_index;
+            lower_rms_bound = 1;%TMS_artefact_sample_index - (parameters.pre_TMS_reference_window * parameters.sampling_rate); 1 is start of trial
+            upper_rms_bound = 100; %TMS_artefact_sample_index; 100 for end of 100 ms
 
             %redefine range if it extends beyond lower x limit
             if lower_rms_bound < 0
@@ -243,7 +243,7 @@ for i = 1:height(trials)
 %                 trials.artloc(i,1) = TMS_artefact_sample_index/parameters.sampling_rate; %artefact location scaled for visualization
  % changed the if statement to look for MEP to look no matter what     
  
-             if    upper_rms_bound == 0
+             if    upper_rms_bound == 100
                 %define MEP search range
                 lower_limit_MEP_window = TMS_artefact_sample_index + (parameters.min_TMS_to_MEP_latency * parameters.sampling_rate);
                 upper_limit_MEP_window = TMS_artefact_sample_index + (parameters.MEP_window_post_artefact * parameters.sampling_rate);
@@ -259,7 +259,7 @@ for i = 1:height(trials)
                 MEP_onset_from_TMS = find(MEPsearchrange > parameters.MEP_onset_std_threshold * std(abs(preTMS_reference_data)),1); % first value that exceeds std threshold within rectified MEP search range
                 ipoints = findchangepts(MEPsearchrange, 'MaxNumChanges', 10, 'Statistic', 'mean'); % fewer change points may suffice
                 
-                % select option for determining MEP onset
+                % select between two options for determining MEP onset
                 if parameters.MEP_std_or_chngpts & ipoints
                     MEP_onset_index = ipoints(1) + lower_limit_MEP_window; % use findchangepts value
                 else
@@ -312,49 +312,88 @@ for i = 1:height(trials)
      %% find CSP
      %START HERE TODAY%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     if parameters.CSP
-        for chan = 1:length(parameters.CSP_channels)
-            if trials.artloc(i,1)
-                csp_signal = trials.(['ch', num2str(parameters.CSP_channels(chan))]){i,1};
-                [IUPPER, ILOWER, UPPERSUM] = cusum(abs(csp_signal));
-                
-                
-                if sum(ismember(parameters.CSP_channels, parameters.MEP_channels))
-                    trials.(['ch', num2str(parameters.CSP_channels(chan)) '_CSP_onset'])(i,1) = trials.artloc(i,1) + ...
-                                                                                                trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_offset'])(i,1);
-                    csp_start_loc = trials.(['ch', num2str(parameters.CSP_channels(chan)) '_CSP_onset'])(i,1) * parameters.sampling_rate;
-                else                    
-                    [peak1, csp_start_loc] = findpeaks(UPPERSUM, 'MinPeakProminence', 9, 'NPeaks', 1);
-                    trials.(['ch', num2str(parameters.CSP_channels(chan)) '_CSP_onset'])(i,1) = csp_start_loc/parameters.sampling_rate;
-                end
-                if csp_start_loc
-                    [peak2, csp_end_position] = findpeaks(-1*UPPERSUM(round(csp_start_loc):end), 'MinPeakProminence', 5, 'NPeaks', 1); % default 5, lower may suffice
-                    csp_end_loc = csp_end_position + csp_start_loc;
-                end
-                if csp_end_loc
-                    trials.(['ch', num2str(parameters.CSP_channels(chan)) '_CSP_offset'])(i,1) = csp_end_loc/parameters.sampling_rate;
-                end
+        for chan = 1:length(parameters.CSP_channels) %for # of channels
+                            MEPchannel = trials.(['ch', num2str(parameters.MEP_channels(chan))]){i,1}; %pulls first sweet from first channel
+    preTMS_reference_data = MEPchannel(lower_rms_bound:upper_rms_bound); %pulls out baseline
+           [MCD_Upper,MCD_Lower] = MCD(preTMS_reference_data);
+            
+            csp_signal = trials.(['ch', num2str(parameters.CSP_channels(chan))]){i,1};
+          CSP_start_search_range =  csp_signal(MEP_offset_index:end);
+            
+            CSP_start_index = find(CSP_start_search_range < MCD_Lower,1); %probably create a function similar to find but for consecutive values
+            
+            CSP_end_search_range = csp_signal(CSP_start_index:end);
+            
+            CSP_end_index = find(CSP_end_search_range > MCD_Upper,1);
+            if CSP_start_index
+                trials.(['ch', num2str(parameters.CSP_channels(chan)) '_CSP_onset'])(i,1) = CSP_start_index/parameters.sampling_rate; % DOUBLE CHECK TO SEE IF THIS GIVES THE RIGHT TIME VALUE
+                trials.(['ch', num2str(parameters.CSP_channels(chan)) '_CSP_offset'])(i,1) = CSP_end_index/parameters.sampling_rate;  % DOUBLE CHECK TO SEE IF THIS GIVES THE RIGHT TIME VALUE
             else
-                artchannel = trials.(['ch', num2str(parameters.artchan_index)]){i,1};
-                [artefact_value, TMS_artefact_sample_index] = max(abs(artchannel));
-                
-                if artefact_value > abs(parameters.tms_artefact_threshold) % TMS artefact must exceed a threshold to be classified as an artefact
-                    trials.artloc(i,1) = TMS_artefact_sample_index/parameters.sampling_rate;%artefact location scaled for visualization
-                    csp_signal = trials.(['ch', num2str(parameters.CSP_channels(chan))]){i,1};
-                    [IUPPER, ILOWER, UPPERSUM] = cusum(abs(csp_signal));
-                    [peak1, csp_start_loc] = findpeaks(UPPERSUM,'MinPeakProminence', 9, 'NPeaks', 1);
-                    if csp_start_loc
-                        [peak2, csp_end_position] = findpeaks(-1*UPPERSUM(csp_start_loc:end), 'MinPeakProminence', 5, 'NPeaks', 1); % default 5, lower may suffice
-                        csp_end_loc = csp_end_position + csp_start_loc;
-                    end
-                    
-                    if csp_start_loc & csp_end_loc
-                        trials.(['ch', num2str(parameters.CSP_channels(chan)) '_CSP_onset'])(i,1) = csp_start_loc/parameters.sampling_rate;
-                        trials.(['ch', num2str(parameters.CSP_channels(chan)) '_CSP_offset'])(i,1) = csp_end_loc/parameters.sampling_rate;
-                    end
-                end
-            end            
+                trials.(['ch', num2str(parameters.CSP_channels(chan)) '_CSP_onset'])(i,1) = NaN;%/parameters.sampling_rate;
+                trials.(['ch', num2str(parameters.CSP_channels(chan)) '_CSP_offset'])(i,1) = NaN;%/parameters.sampling_rate;
+            end
+            
         end
     end
-end % end trial loop
+    
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%            
+%             if trials.artloc(i,1) %if artc loc has a non zero value
+%                 csp_signal = trials.(['ch', num2str(parameters.CSP_channels(chan))]){i,1};
+%                 [IUPPER, ILOWER, UPPERSUM] = cusum(abs(csp_signal));
+%                 
+%                 
+%                 if sum(ismember(parameters.CSP_channels, parameters.MEP_channels))
+%                     trials.(['ch', num2str(parameters.CSP_channels(chan)) '_CSP_onset'])(i,1) = trials.artloc(i,1) + ...
+%                                                                                                 trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_offset'])(i,1);
+%                     csp_start_loc = trials.(['ch', num2str(parameters.CSP_channels(chan)) '_CSP_onset'])(i,1) * parameters.sampling_rate;
+%                 else                    
+%                     [peak1, csp_start_loc] = findpeaks(UPPERSUM, 'MinPeakProminence', 9, 'NPeaks', 1);
+%                     trials.(['ch', num2str(parameters.CSP_channels(chan)) '_CSP_onset'])(i,1) = csp_start_loc/parameters.sampling_rate;
+%                 end
+%                 if csp_start_loc
+%                     [peak2, csp_end_position] = findpeaks(-1*UPPERSUM(round(csp_start_loc):end), 'MinPeakProminence', 5, 'NPeaks', 1); % default 5, lower may suffice
+%                     csp_end_loc = csp_end_position + csp_start_loc;
+%                 end
+%                 if csp_end_loc
+%                     trials.(['ch', num2str(parameters.CSP_channels(chan)) '_CSP_offset'])(i,1) = csp_end_loc/parameters.sampling_rate;
+%                 end
+%             else %else if art loc is zero
+%                 artchannel = trials.(['ch', num2str(parameters.artchan_index)]){i,1}; %not using
+%                 [artefact_value, TMS_artefact_sample_index] = max(abs(artchannel));
+%                 
+%                 if artefact_value > abs(parameters.tms_artefact_threshold) % TMS artefact must exceed a threshold to be classified as an artefact
+%                     trials.artloc(i,1) = TMS_artefact_sample_index/parameters.sampling_rate;%artefact location scaled for visualization
+%  %%%%%%%%%%%%%%%%%%%%%%%%%%This is the only part that actually looks for csp
+%                     
+%                     csp_signal = trials.(['ch', num2str(parameters.CSP_channels(chan))]){i,1};
+%                     [IUPPER, ILOWER, UPPERSUM] = cusum(abs(csp_signal));
+%                     [peak1, csp_start_loc] = findpeaks(UPPERSUM,'MinPeakProminence', 9, 'NPeaks', 1);
+%                     if csp_start_loc
+%                         [peak2, csp_end_position] = findpeaks(-1*UPPERSUM(csp_start_loc:end), 'MinPeakProminence', 5, 'NPeaks', 1); % default 5, lower may suffice
+%                         csp_end_loc = csp_end_position + csp_start_loc;
+%                     end
+%                     
+%                     if csp_start_loc & csp_end_loc
+%                         trials.(['ch', num2str(parameters.CSP_channels(chan)) '_CSP_onset'])(i,1) = csp_start_loc/parameters.sampling_rate;
+%                         trials.(['ch', num2str(parameters.CSP_channels(chan)) '_CSP_offset'])(i,1) = csp_end_loc/parameters.sampling_rate;
+%                     end
+%                 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
+%                 end
+%             end            
+%         end
+%     end
+ end % end trial loop
 
 end % end findEvent function
+
+
+% 
+% function [upperbound,lowerbound] = MCD(x)
+% %UNTITLED Summary of this function goes here
+% %   Detailed explanation goes here
+% MCD = mean(abs(diff(x)));
+% avg = mean(x);
+% 
+% upperbound = avg + MCD * 2.66;
+% lowerbound = avg - MCD * 2.66;
+% end
