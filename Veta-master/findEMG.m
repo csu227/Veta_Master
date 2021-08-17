@@ -220,8 +220,8 @@ for i = 1:height(trials)
             TMS_artefact_sample_index = 115;
 
             %set range to look for preMEP EMG activity to calculate RMS
-            baseline_lower_bound = 1;%TMS_artefact_sample_index - (parameters.pre_TMS_reference_window * parameters.sampling_rate); 1 is start of trial
-            baseline_upper_bound = 100; %TMS_artefact_sample_index; 100 for end of 100 ms
+            baseline_lower_bound = 41;% index 41 = cursor 3 %TMS_artefact_sample_index - (parameters.pre_TMS_reference_window * parameters.sampling_rate); 1 is start of trial
+            baseline_upper_bound = 91; % index 91 = cursor 4 %TMS_artefact_sample_index; 100 for end of 100 ms
 
             %redefine range if it extends beyond lower x limit
             if baseline_lower_bound < 0
@@ -232,7 +232,7 @@ for i = 1:height(trials)
             %RMS_of_preMEP_window = rms(preTMS_reference_data);
             
             trials.(['ch',num2str(parameters.MEP_channels(chan)),'baselineAVG_preMEP'])(i,1) = mean(preTMS_reference_data); %stores baseline in structure
-
+            BA = trials.(['ch',num2str(parameters.MEP_channels(chan)),'baselineAVG_preMEP'])(i,1);
             %use this later with baseline peak to peak to compare with mep
             %peak to peak to accept or reject
             % reject trial if RMS is above tolerance threshold
@@ -249,17 +249,22 @@ for i = 1:height(trials)
 %                 trials.artloc(i,1) = TMS_artefact_sample_index/parameters.sampling_rate; %artefact location scaled for visualization
  % changed the if statement to look for MEP to look no matter what     
  
-             if    baseline_upper_bound == 100
+             if    baseline_upper_bound == 91
                 %define MEP search range
-                lower_limit_MEP_window = 115; %* parameters.sampling_rate; %changing mep search range lower limit to 115 (15ms) %TMS_artefact_sample_index + (parameters.min_TMS_to_MEP_latency * parameters.sampling_rate);
-                upper_limit_MEP_window = 165; %* parameters.sampling_rate; %changing mep search range lower limit to 165 (65ms) %TMS_artefact_sample_index + (parameters.MEP_window_post_artefact * parameters.sampling_rate);
+                %eveyrthing is already off by 1 so need to adjust by 1 and
+                %then another 1 to account for values at cursors
+                
+                % index 116 = cursor 2 
+                % index 166 = cursor 3 
+                lower_limit_MEP_window = 116; % one point after the cursors to align with how spike finds the max value %* parameters.sampling_rate; %changing mep search range lower limit to 115 (15ms) %TMS_artefact_sample_index + (parameters.min_TMS_to_MEP_latency * parameters.sampling_rate);
+                upper_limit_MEP_window = 166; % one point before the cursors to align with how spike finds the max value %* parameters.sampling_rate; %changing mep search range lower limit to 165 (65ms) %TMS_artefact_sample_index + (parameters.MEP_window_post_artefact * parameters.sampling_rate);
                 if lower_limit_MEP_window>length(MEPchannel)
                     lower_limit_MEP_window = 1;
                 end
                 if upper_limit_MEP_window>length(MEPchannel)
                     upper_limit_MEP_window = length(MEPchannel);
                 end
-                MEPsearchrange = MEPchannel(lower_limit_MEP_window:upper_limit_MEP_window);
+                MEPsearchrange = MEPchannel(lower_limit_MEP_window+1:upper_limit_MEP_window-1);
                 
                 % detect MEP onset and offset point;
                 
@@ -269,19 +274,60 @@ for i = 1:height(trials)
                 MEP_onset_from_TMS = find(MEPsearchrange > parameters.MEP_onset_std_threshold * std(abs(preTMS_reference_data)),1); % first value that exceeds std threshold within rectified MEP search range
                 ipoints = findchangepts(MEPsearchrange, 'MaxNumChanges', 10, 'Statistic', 'mean'); % fewer change points may suffice
                 
-                % select between two options for determining MEP onset
-                if parameters.MEP_std_or_chngpts & ipoints
-                    MEP_onset_index = ipoints(1) + lower_limit_MEP_window; % use findchangepts value
-                else
-                    MEP_onset_index = MEP_onset_from_TMS + lower_limit_MEP_window; % use num std of baseline
-                end
                 
-                if ipoints
-                    MEP_offset_index = ipoints(end) + lower_limit_MEP_window;
-                else
-                    MEP_offset_index = MEP_onset_index;
-                end
+                time = .001:.001:.4;
                 
+                
+%               [upperbound,lowerbound,MCD] = MCD_Find(preTMS_reference_data);
+                
+                
+                [MEP_onset_time,MEP_onset_index] = CON_Finder(MEPsearchrange,time,BA,'U',10,1,1);
+                MEP_onset_index = MEP_onset_index(1)+lower_limit_MEP_window;
+                  
+                if ~isnan(MEP_onset_index)
+                    offsearchrange =  MEPchannel(MEP_onset_index:end);
+                  
+                    [MEP_offset_time,MEP_offset_index] = CON_Finder(offsearchrange,time,MCD,'D',1);
+                     MEP_offset_index = MEP_offset_index(1)+MEP_onset_index;
+                else 
+                        %MEP_offset_index = NaN; 
+                        MEP_onset_from_TMS = find(MEPsearchrange > parameters.MEP_onset_std_threshold * std(abs(preTMS_reference_data)),1); % first value that exceeds std threshold within rectified MEP search range
+                         ipoints = findchangepts(MEPsearchrange, 'MaxNumChanges', 10, 'Statistic', 'mean'); % fewer change points may suffice
+                
+                            if parameters.MEP_std_or_chngpts & ipoints
+                                 MEP_onset_index = ipoints(1) + lower_limit_MEP_window; % use findchangepts value
+                            else
+                                 MEP_onset_index = MEP_onset_from_TMS + lower_limit_MEP_window; % use num std of baseline
+                            end
+                
+                            if ipoints
+                                 MEP_offset_index = ipoints(end) + lower_limit_MEP_window;
+                            else
+                                 MEP_offset_index = MEP_onset_index;
+                            end
+                end
+                  
+%                 MEP_onset_index = find((MEPsearchrange < upperbound),1);
+%                 
+                
+%                 
+%                                
+%                  MEP_offset_index = find((offsearchrange < lowerbound),1);
+                
+                
+                %select between two options for determining MEP onset
+%                 if parameters.MEP_std_or_chngpts & ipoints
+%                     MEP_onset_index = ipoints(1) + lower_limit_MEP_window; % use findchangepts value
+%                 else
+%                     MEP_onset_index = MEP_onset_from_TMS + lower_limit_MEP_window; % use num std of baseline
+%                 end
+%                 
+%                 if ipoints
+%                     MEP_offset_index = ipoints(end) + lower_limit_MEP_window;
+%                 else
+%                     MEP_offset_index = MEP_onset_index;
+%                 end
+%                 
                 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
                 
                 
@@ -304,23 +350,54 @@ for i = 1:height(trials)
                 
                 %look only in range after artefact
                 %preTMS_MEP_reference_data = MEPchannel(preTMS_reference_window_lower_limit:TMS_artefact_sample_index);
-                MEPsearchrange = MEPchannel(lower_limit_MEP_window:upper_limit_MEP_window);
+                %MEPsearchrange = MEPchannel(lower_limit_MEP_window:upper_limit_MEP_window);
                 [max_MEP_value,MEP_max_sample_point] = max(MEPsearchrange);  % fix alignment to match cursors
                 [min_MEP_value,MEP_min_sample_point] = min(MEPsearchrange);
                 
                 
+                %for MEP max min it does not use values at cursors in
+                %signal but for baseline it looks like it does use those
+                %values so I dont need +- 1
+                Baselinesearchrange = MEPchannel(baseline_lower_bound:baseline_upper_bound);
+                
+                [max_Baseline_value,Baseline_max_sample_point] = max(Baselinesearchrange);  % fix alignment to match cursors
+                [min_Baseline_value,Baseline_min_sample_point] = min(Baselinesearchrange);
+                
+                
+                
                 % MEP AREA formula
+                if ~isnan(MEP_onset_index)
                 MEParea = trapz(MEPchannel(MEP_onset_index:MEP_offset_index));
+                else
+                    MEParea = NaN;
+                end
+                
                 % orginal method of MEP area %sum(abs(MEPchannel(MEP_onset_index:MEP_offset_index)))/(MEP_max_sample_point - MEP_min_sample_point);
                 
                 % identify MEP onset
-                if ~isempty(MEP_onset_index)
-                    trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_time'])(i,1) = MEP_onset_index/parameters.sampling_rate;
-                    %trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_latency'])(i,1) = (MEP_onset_index/parameters.sampling_rate) - trials.artloc(i,1);
+                %if ~isempty(MEP_onset_index)
+                 if ~isnan(MEP_onset_index)
+                    trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_time'])(i,1) = MEP_onset_index/parameters.sampling_rate;                   
                     trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_offset'])(i,1) = (MEP_offset_index/parameters.sampling_rate);% - trials.artloc(i,1);
                     trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_duration'])(i,1) = trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_offset'])(i,1) - trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_time'])(i,1);  %changed the formula from 'MEP_latency to 'MEP_time'
                     trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_amplitude'])(i,1) = max_MEP_value - min_MEP_value;
+                    trials.(['ch', num2str(parameters.MEP_channels(chan)), '_Baseline_amplitude'])(i,1) = max_Baseline_value - min_Baseline_value;
+                    trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_Peak-Peak_Subtraction'])(i,1) = trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_amplitude'])(i,1) - trials.(['ch', num2str(parameters.MEP_channels(chan)), '_Baseline_amplitude'])(i,1);
+                    trials.(['ch', num2str(parameters.MEP_channels(chan)), '_Trial_Accept_200'])(i,1) = (trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_Peak-Peak_Subtraction'])(i,1) > 200);
+                    trials.(['ch', num2str(parameters.MEP_channels(chan)), '_Trial_Accept_50'])(i,1) = (trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_Peak-Peak_Subtraction'])(i,1) > 50);
                     trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_area'])(i,1) = MEParea;
+                    
+                 else
+                    trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_time'])(i,1) = NaN;                   
+                    trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_offset'])(i,1) = NaN;
+                    trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_duration'])(i,1) = NaN;
+                    trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_amplitude'])(i,1) = NaN;
+                    trials.(['ch', num2str(parameters.MEP_channels(chan)), '_Baseline_amplitude'])(i,1) = NaN;
+                    trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_Peak-Peak_Subtraction'])(i,1) = NaN;
+                    trials.(['ch', num2str(parameters.MEP_channels(chan)), '_Trial_Accept_200'])(i,1) = NaN;
+                    trials.(['ch', num2str(parameters.MEP_channels(chan)), '_Trial_Accept_50'])(i,1) = NaN;
+                    trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_area'])(i,1) = MEParea;
+                    
                 end
                 
             end
@@ -334,10 +411,57 @@ for i = 1:height(trials)
                             MEPchannel = trials.(['ch', num2str(parameters.MEP_channels(chan))]){i,1}; %pulls first sweep from first channel
     preTMS_reference_data = MEPchannel(baseline_lower_bound:baseline_upper_bound); %pulls out baseline
            
-    [MCD_Upper,MCD_Lower] = MCD(preTMS_reference_data);
+    %[MCD_Upper,MCD_Lower,MCD] = MCD_Find(preTMS_reference_data);
             
+    CSPsearchrange = MEPchannel(MEP_offset_index:end);
+    
+    [CSP_onset_time,CSP_onset_index] = CON_Finder(CSPsearchrange,time,BA,'D',10,1,1);
+    
+   % offsearchrange =  MEPchannel(CSP_onset_index:end);
+    
+    for i =  CSP_onset_index:length(MEPchannel)-10
+        csp_test = MEPchannel(i:i+10);
+        proof = csp_test > BA;
+        if sum(proof => 5)
+            CSP_offset_index = i;
+        break
+        end
+    end
+    
+    
+    
             csp_signal = trials.(['ch', num2str(parameters.CSP_channels(chan))]){i,1};
             CSP_start_search_range =  csp_signal(MEP_offset_index+1:end);
+            
+            
+             if ~isnan(MEP_onset_index)
+                    offsearchrange =  MEPchannel(CSP_onset_index:end);
+                  
+                    [CSP_offset_time,CSP_offset_index] = CON_Finder(offsearchrange,time,BA,'U',1);
+                     MEP_offset_index = MEP_offset_index(1)+MEP_onset_index;
+                else 
+                        %MEP_offset_index = NaN; 
+                        MEP_onset_from_TMS = find(MEPsearchrange > parameters.MEP_onset_std_threshold * std(abs(preTMS_reference_data)),1); % first value that exceeds std threshold within rectified MEP search range
+                         ipoints = findchangepts(MEPsearchrange, 'MaxNumChanges', 10, 'Statistic', 'mean'); % fewer change points may suffice
+                
+                            if parameters.MEP_std_or_chngpts & ipoints
+                                 MEP_onset_index = ipoints(1) + lower_limit_MEP_window; % use findchangepts value
+                            else
+                                 MEP_onset_index = MEP_onset_from_TMS + lower_limit_MEP_window; % use num std of baseline
+                            end
+                
+                            if ipoints
+                                 MEP_offset_index = ipoints(end) + lower_limit_MEP_window;
+                            else
+                                 MEP_offset_index = MEP_onset_index;
+                            end
+                end
+            
+            
+            
+            
+            
+            
             
             CSP_start_index = MEP_offset_index + find(CSP_start_search_range < MCD_Lower,1); %probably create a function similar to find but for consecutive values
             
