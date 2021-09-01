@@ -52,6 +52,10 @@ function findEMG(filename)
 %which is time of stimulus
 %%start mep search at .115 and end at .165
 
+time_matlab = [0:.001:.399]';
+time_signal = [-.1:.001:0.299]';
+
+time = [time_matlab time_signal];
 
 use_command_line = 1;%toggle bool to suit parameter input preferences. IF this is set to 0 it wont ask user to define parameters
 if ~use_command_line
@@ -175,8 +179,8 @@ function trials = findEvents(trials,parameters) % parameterize these
 
 if parameters.MEP
     for chan = 1:length(parameters.MEP_channels)
-        trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_time'])(:,1) = 0; % adding to structure for trials. middle portion just is calling a previous structure to get value for 'ch' and adding outcome variables
-       % trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_latency'])(:,1) = 0;                                                                                                                                                                 
+        trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_onset'])(:,1) = 0; % adding to structure for trials. middle portion just is calling a previous structure to get value for 'ch' and adding outcome variables
+        trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_latency'])(:,1) = 0;                                                                                                                                                                 
        % trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_offset'])(:,1) = 0;
         trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_area'])(:,1) = 0;
     end
@@ -271,7 +275,7 @@ for i = 1:height(trials)
                 %use con_find
                 %here%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
                 
-                MEP_onset_from_TMS = find(MEPsearchrange > parameters.MEP_onset_std_threshold * std(abs(preTMS_reference_data)),1); % first value that exceeds std threshold within rectified MEP search range
+               % MEP_onset_from_TMS = find(MEPsearchrange > parameters.MEP_onset_std_threshold * std(abs(preTMS_reference_data)),1); % first value that exceeds std threshold within rectified MEP search range
                 ipoints = findchangepts(MEPsearchrange, 'MaxNumChanges', 10, 'Statistic', 'mean'); % fewer change points may suffice
                 
                 
@@ -280,17 +284,37 @@ for i = 1:height(trials)
                 
 %               [upperbound,lowerbound,MCD] = MCD_Find(preTMS_reference_data);
                 
+
+                [upperbound,lowerbound,MCD] = MCD_Find(preTMS_reference_data);
+
                 
-                [MEP_onset_time,MEP_onset_index] = CON_Finder(MEPsearchrange,time,BA,'U',10,1,1);
-                MEP_onset_index = MEP_onset_index(1)+lower_limit_MEP_window;
+                
+               [MEP_onset_time,MEP_onset_index] = CON_Finder(MEPsearchrange,time,upperbound,'U',5,1);     %CON_Finder(EMG_wave,time,Threshold,direction,varargin)%,n,start,direction)
+               
+               MEP_onset_index = MEP_onset_index(1)+lower_limit_MEP_window;
                   
-                if ~isnan(MEP_onset_index)
+                if ~isnan(MEP_onset_index) %if we found onset then look for offset
+                   
+                    trials.trial_accept(i,1) = 1; % if first criteria worked trial accept (1)
                     offsearchrange =  MEPchannel(MEP_onset_index:end);
                   
-                    [MEP_offset_time,MEP_offset_index] = CON_Finder(offsearchrange,time,MCD,'D',1);
+                    
+                    
+                    [MEP_offset_time,MEP_offset_index] = CON_Finder(offsearchrange,time,upperbound,'D',5,1);   %CON_Finder(EMG_wave,time,Threshold,direction,varargin)%,n,start,direction)
                      MEP_offset_index = MEP_offset_index(1)+MEP_onset_index;
-                else 
+                
+                     if isnan(MEP_offset_index)
+                               MEP_offset_index = ipoints(end) + lower_limit_MEP_window;
+                     else
+                                MEP_offset_index = MEP_onset_index;
+                     end
+                
+                     
+                     
+                else  %if our first criteria didnt find onset then use this next and find offset
                         %MEP_offset_index = NaN; 
+                        trials.trial_accept(i,1) = 0; %if first criteria didnt work do not accept trial (0)
+                        
                         MEP_onset_from_TMS = find(MEPsearchrange > parameters.MEP_onset_std_threshold * std(abs(preTMS_reference_data)),1); % first value that exceeds std threshold within rectified MEP search range
                          ipoints = findchangepts(MEPsearchrange, 'MaxNumChanges', 10, 'Statistic', 'mean'); % fewer change points may suffice
                 
@@ -377,8 +401,9 @@ for i = 1:height(trials)
                 % identify MEP onset
                 %if ~isempty(MEP_onset_index)
                  if ~isnan(MEP_onset_index)
-                    trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_time'])(i,1) = MEP_onset_index/parameters.sampling_rate;                   
+                    trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_onset'])(i,1) = MEP_onset_index/parameters.sampling_rate;                   
                     trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_offset'])(i,1) = (MEP_offset_index/parameters.sampling_rate);% - trials.artloc(i,1);
+                    trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_latency'])(i,1) =
                     trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_duration'])(i,1) = trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_offset'])(i,1) - trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_time'])(i,1);  %changed the formula from 'MEP_latency to 'MEP_time'
                     trials.(['ch', num2str(parameters.MEP_channels(chan)), '_MEP_amplitude'])(i,1) = max_MEP_value - min_MEP_value;
                     trials.(['ch', num2str(parameters.MEP_channels(chan)), '_Baseline_amplitude'])(i,1) = max_Baseline_value - min_Baseline_value;
@@ -411,22 +436,22 @@ for i = 1:height(trials)
                             MEPchannel = trials.(['ch', num2str(parameters.MEP_channels(chan))]){i,1}; %pulls first sweep from first channel
     preTMS_reference_data = MEPchannel(baseline_lower_bound:baseline_upper_bound); %pulls out baseline
            
-    %[MCD_Upper,MCD_Lower,MCD] = MCD_Find(preTMS_reference_data);
+   [upperbound,lowerbound,MCD] = MCD_Find(preTMS_reference_data);
             
-    CSPsearchrange = MEPchannel(MEP_offset_index:end);
+    CSPsearchrange = MEPchannel(MEP_onset_index:end);
     
-    [CSP_onset_time,CSP_onset_index] = CON_Finder(CSPsearchrange,time,BA,'D',10,1,1);
-    
+    [CSP_onset_time,CSP_onset_index] = CON_Finder(CSPsearchrange,time,lowerbound,'D',5,1);
+    CSP_onset_index = CSP_onset_index + MEP_onset_index;
    % offsearchrange =  MEPchannel(CSP_onset_index:end);
     
-    for i =  CSP_onset_index:length(MEPchannel)-10
-        csp_test = MEPchannel(i:i+10);
-        proof = csp_test > BA;
-        if sum(proof => 5)
-            CSP_offset_index = i;
-        break
-        end
-    end
+%     for i =  CSP_onset_index:length(MEPchannel)-10
+%         csp_test = MEPchannel(i:i+10);
+%         proof = csp_test > BA;
+%         if sum(proof => 5)
+%             CSP_offset_index = i;
+%         break
+%         end
+%     end
     
     
     
@@ -434,28 +459,22 @@ for i = 1:height(trials)
             CSP_start_search_range =  csp_signal(MEP_offset_index+1:end);
             
             
-             if ~isnan(MEP_onset_index)
+             if ~isnan(CSP_start_index)
                     offsearchrange =  MEPchannel(CSP_onset_index:end);
                   
-                    [CSP_offset_time,CSP_offset_index] = CON_Finder(offsearchrange,time,BA,'U',1);
-                     MEP_offset_index = MEP_offset_index(1)+MEP_onset_index;
+                    [CSP_offset_time,CSP_offset_index] = CON_Finder(offsearchrange,time,lowerbound,'U',5,1);
+                     CSP_offset_index = CSP_offset_index+MEP_onset_index;
                 else 
-                        %MEP_offset_index = NaN; 
-                        MEP_onset_from_TMS = find(MEPsearchrange > parameters.MEP_onset_std_threshold * std(abs(preTMS_reference_data)),1); % first value that exceeds std threshold within rectified MEP search range
-                         ipoints = findchangepts(MEPsearchrange, 'MaxNumChanges', 10, 'Statistic', 'mean'); % fewer change points may suffice
-                
-                            if parameters.MEP_std_or_chngpts & ipoints
-                                 MEP_onset_index = ipoints(1) + lower_limit_MEP_window; % use findchangepts value
-                            else
-                                 MEP_onset_index = MEP_onset_from_TMS + lower_limit_MEP_window; % use num std of baseline
-                            end
-                
-                            if ipoints
-                                 MEP_offset_index = ipoints(end) + lower_limit_MEP_window;
-                            else
-                                 MEP_offset_index = MEP_onset_index;
-                            end
-                end
+                       CSP_start_index = MEP_offset_index + find(CSP_start_search_range < lowerbound,1); %probably create a function similar to find but for consecutive values
+            
+                        CSP_end_search_range = csp_signal(CSP_start_index+1:end);
+            
+                            try
+                          CSP_end_index = MEP_offset_index + find(CSP_end_search_range > upperbound,1);
+                            catch
+                      CSP_end_index = 400;
+                             end
+             end
             
             
             
@@ -463,15 +482,7 @@ for i = 1:height(trials)
             
             
             
-            CSP_start_index = MEP_offset_index + find(CSP_start_search_range < MCD_Lower,1); %probably create a function similar to find but for consecutive values
-            
-            CSP_end_search_range = csp_signal(CSP_start_index+1:end);
-            
-            try
-            CSP_end_index = MEP_offset_index + find(CSP_end_search_range > MCD_Upper,1);
-            catch
-            CSP_end_index = 400;
-            end
+           
             
             if CSP_start_index
                 trials.(['ch', num2str(parameters.CSP_channels(chan)) '_CSP_onset'])(i,1) = CSP_start_index/parameters.sampling_rate; % DOUBLE CHECK TO SEE IF THIS GIVES THE RIGHT TIME VALUE
