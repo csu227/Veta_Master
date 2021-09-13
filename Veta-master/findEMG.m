@@ -207,7 +207,7 @@ for i = 1:height(trials)
     if parameters.MEP
         for chan = 1:length(parameters.MEP_channels)
             MEPchannel = trials.(['ch', num2str(parameters.MEP_channels(chan))]){i,1}; %pulls first sweet from first channel
-
+            rec_MEPchannel = abs(MEPchannel);
 % Commented out the use of artifact channel. Setting an index location. Currently 101 (time = 0)          
             
 %             if parameters.artchan_index
@@ -224,19 +224,23 @@ for i = 1:height(trials)
             TMS_artefact_sample_index = 115;
 
             %set range to look for preMEP EMG activity to calculate RMS
-            baseline_lower_bound = 41;% index 41 = cursor 3 %TMS_artefact_sample_index - (parameters.pre_TMS_reference_window * parameters.sampling_rate); 1 is start of trial
-            baseline_upper_bound = 91; % index 91 = cursor 4 %TMS_artefact_sample_index; 100 for end of 100 ms
+            baseline_lower_bound = 1;% index 1 = start of signal %TMS_artefact_sample_index - (parameters.pre_TMS_reference_window * parameters.sampling_rate); 1 is start of trial
+            baseline_upper_bound = 91; % index 91 = cursor 4 (-10ms) %TMS_artefact_sample_index; 100 for end of 100 ms
 
             %redefine range if it extends beyond lower x limit
-            if baseline_lower_bound < 0
-                baseline_lower_bound = 1;
-            end
+%             if baseline_lower_bound < 0
+%                 baseline_lower_bound = 1;
+%             end
             %taking our rms use
-            preTMS_reference_data = MEPchannel(baseline_lower_bound:baseline_upper_bound); %pulls out baseline
+            preTMS_reference_data = rec_MEPchannel(baseline_lower_bound:baseline_upper_bound); %pulls out baseline
+            Baseline_EMG_rms = rms(preTMS_reference_data);
+            
             %RMS_of_preMEP_window = rms(preTMS_reference_data);
             
             trials.(['ch',num2str(parameters.MEP_channels(chan)),'baselineAVG_preMEP'])(i,1) = mean(preTMS_reference_data); %stores baseline in structure
-            BA = trials.(['ch',num2str(parameters.MEP_channels(chan)),'baselineAVG_preMEP'])(i,1);
+            Baseline_EMG = trials.(['ch',num2str(parameters.MEP_channels(chan)),'baselineAVG_preMEP'])(i,1);
+            
+            trials.(['ch',num2str(parameters.MEP_channels(chan)),'baselineAVG_rms'])(i,1) = Baseline_EMG_rms;
             %use this later with baseline peak to peak to compare with mep
             %peak to peak to accept or reject
             % reject trial if RMS is above tolerance threshold
@@ -268,7 +272,7 @@ for i = 1:height(trials)
                 if upper_limit_MEP_window>length(MEPchannel)
                     upper_limit_MEP_window = length(MEPchannel);
                 end
-                MEPsearchrange = MEPchannel(lower_limit_MEP_window+1:upper_limit_MEP_window-1);
+                MEPsearchrange = rec_MEPchannel(lower_limit_MEP_window+1:upper_limit_MEP_window-1);
                 
                 % detect MEP onset and offset point;
                 
@@ -285,11 +289,11 @@ for i = 1:height(trials)
 %               [upperbound,lowerbound,MCD] = MCD_Find(preTMS_reference_data);
                 
 
-                [upperbound,lowerbound,MCD] = MCD_Find(preTMS_reference_data);
+               % [upperbound,lowerbound,MCD] = MCD_Find(preTMS_reference_data);
 
+                Baseline_Std = std(preTMS_reference_data)*2;
                 
-                
-               [MEP_onset_time,MEP_onset_index] = CON_Finder(MEPsearchrange,time,upperbound,'U',5,1);     %CON_Finder(EMG_wave,time,Threshold,direction,varargin)%,n,start,direction)
+               [MEP_onset_time,MEP_onset_index] = CON_Finder(MEPsearchrange,time,Baseline_Std,'U',1,1);     %CON_Finder(EMG_wave,time,Threshold,direction,varargin)%,n,start,direction)
                
                MEP_onset_index = MEP_onset_index(1)+lower_limit_MEP_window;
                   
