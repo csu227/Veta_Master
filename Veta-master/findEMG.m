@@ -58,46 +58,29 @@ time_matlab = [0:.001:.399]';
 time_signal = [-.1:.001:0.299]';
 time = [time_matlab time_signal];
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
-%% User Defined Parameters %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+%% Non User input Defined analysis Parameters %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+% Used if the prompts to ask for user input are toggled of. 
+% These settings will automatically be used
 
 use_command_line = 1;%toggle bool to suit parameter input preferences. IF this is set to 0 it wont ask user to define parameters
 if ~use_command_line
-%     parameters.EMG = 1; % Detect EMG bursts: 0 = no, 1 = yes
-%     parameters.EMG_burst_channels = [1 2];
-    parameters.MEP = 1; % Detect MEPs: 0 = no, 1 = yes
-    parameters.artchan_index = 3;
-    parameters.MEP_channels = [1];
-    
- %Silent Period   
-    
-    parameters.CSP = 1; % Detect CSP: 0 = no, 1 = yes
-     parameters.CSP_channels = [0];
-   
-    
-     parameters.MEP_std_or_chngpts = 1; % 0 = std of baseline, 1 = findchangepts
+% MEP
+     parameters.MEP = 1; % Detect MEPs: 0 = no, 1 = yes
+     parameters.MEP_channels = [1 2 3 4 5 6 7 8];
+% Silent Period   
+     parameters.CSP = 1; % Detect CSP: 0 = no, 1 = yes
+     parameters.CSP_channels = [1 2 3 4 5 6 7 8];
 end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
-%% Define analysis parameters %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
-%Creates a structure for just parameters. Edit these to suit your analysis needs
-
-%
-parameters.sampling_rate = 1000; % samples per second (Hz) &chnaged from 5000 to 100 for our study 
-
-% parameters.emg_burst_threshold = .3; % raw threshold in V to consider for EMG
-% parameters.emg_onset_std_threshold = 2; % number of std to consider for EMG burst onsets/offsets
-% parameters.tms_artefact_threshold = .0001; % raw threshold magnitude in V to consider for TMS artefact
-
-%define MEP search ranges
-parameters.min_TMS_to_MEP_latency = .015; % number of secs after TMS to begin MEP onset detection  % lower_limit_MEP_window
-parameters.MEP_window_post_artefact = .065; % time in s after TMS to measure MEP in seconds % upper_limit_MEP_window
-parameters.pre_TMS_reference_window = .05;  % time before TMS to serve as reference baseline for MEP onset
-parameters.MEP_onset_std_threshold = .5; % number of std to consider for MEP onsets
-parameters.end_of_MEP_relative_to_TMS = .1; % time in s of end of MEP relative to TMS artefact
-
-% parameters.RMS_preMEP_EMG_tolerance = .05; % root mean square EMG tolerance for including MEP
-
-% parameters for removing TMS artefact & MEP when detecting EMG in same channel as MEP
-%parameters.time_prior_to_TMS_artefact = .005; % time in s prior to TMS artefact to set to zero %Changed to .1s or 100ms for time before stimulus in our files
+%% Pre-defined analysis parameters %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+% Creates a structure for just parameters. Edit these to suit your analysis needs
+    parameters.sampling_rate = 1000; % samples per second (Hz) &chnaged from 5000 to 100 for our study 
+% Define MEP search ranges
+    parameters.min_TMS_to_MEP_latency = .015; % number of secs after TMS to begin MEP onset detection  % lower_limit_MEP_window
+    parameters.MEP_window_post_artefact = .065; % time in s after TMS to measure MEP in seconds % upper_limit_MEP_window
+    parameters.pre_TMS_reference_window = .05;  % time before TMS to serve as reference baseline for MEP onset
+    parameters.MEP_onset_std_threshold = .5; % number of std to consider for MEP onsets
+    parameters.end_of_MEP_relative_to_TMS = .1; % time in s of end of MEP relative to TMS artefact
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
 %% Parse input
 if (nargin < 1)
@@ -110,13 +93,15 @@ end
 load(File);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
 %% set number of channels
-trials.trial_accept(:,1) = 1;
-chs = ["ch1","ch2","ch3","ch4","ch5","ch6","ch7","ch8"];
-parameters.num_channels = sum(contains(trials.Properties.VariableNames,chs));
+    trials.trial_accept(:,1) = 1;
+    chs = ["ch1","ch2","ch3","ch4","ch5","ch6","ch7","ch8"];
+    parameters.num_channels = sum(contains(trials.Properties.VariableNames,chs));
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
-%% Toggles EMG and TMS functionality
-if use_command_line
+%% User Input Defined analysis parameters %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+% Used if the prompts to ask for user input are toggled onn. 
+% Toggles EMG and TMS functionality
 
+if use_command_line % if use_command_line has a value
     
     parameters.MEP = input('Do you want to detect motor evoked potentials (MEPs)? yes(1) or no(0): ');
     parameters.CSP = input('Do you want to detect cortical silent period (CSP) epochs? yes(1) or no(0): ');
@@ -190,14 +175,6 @@ if parameters.CSP
     end
 end
 
-%% identify MEP and non-MEP channels
-%dont think we need this since all channels are MEP Channels
-% if parameters.MEP & parameters.EMG
-%     non_MEP_channels = parameters.EMG_burst_channels(parameters.EMG_burst_channels ~= parameters.MEP_channels); % do not want to detect MEPs as EMG bursts, so ignore MEP channel
-% elseif parameters.EMG
-%     non_MEP_channels = parameters.EMG_burst_channels;
-% end
-
 %% sweep loop
 for i = 1:height(trials)    
     %% find TMS artefact and MEP
@@ -207,7 +184,7 @@ for i = 1:height(trials)
             rec_MEPchannel = abs(MEPchannel); % rectifies the signal
 
  %Test to try a set value for the artefact index in this case where to start
-%searching for MEP
+ %searching for MEP
             TMS_artefact_sample_index = 115;
 
             %set range to look for preMEP EMG activity to calculate RMS
@@ -269,38 +246,23 @@ for i = 1:height(trials)
                 if ~isnan(MEP_onset_index) %if we found onset then look for offset
                    
                     trials.trial_accept(i,1) = 1; % if first criteria worked trial accept (1)
-                    offsearchrange =  MEPchannel(MEP_onset_index:end);
+                    offsearchrange =  MEPsearchrange(MEP_onset_index:end);
                                    
                     
                     [MEP_offset_time,MEP_offset_index] = CON_Finder(offsearchrange,time,Baseline_EMG,'D',5,1);   %CON_Finder(EMG_wave,time,Threshold,direction,varargin)%,n,start,direction)
                      MEP_offset_index = MEP_offset_index(1)+MEP_onset_index; % adjust index for entire sweep
                 
                      if isnan(MEP_offset_index)
-                               MEP_offset_index = ipoints(end) + lower_limit_MEP_window; % adjust index for entire sweep
-                     else
-                                MEP_offset_index = MEP_onset_index;
+                               MEP_offset_index = NaN; 
                      end
                 
                      
                  % get rid of it    
                 else 
                         %MEP_offset_index = NaN; 
-                        trials.trial_accept(i,1) = 0; %if first criteria didnt work do not accept trial (0)
-                        
-                        MEP_onset_from_TMS = find(MEPsearchrange > parameters.MEP_onset_std_threshold * std(abs(preTMS_reference_data)),1); % first value that exceeds std threshold within rectified MEP search range
-                         ipoints = findchangepts(MEPsearchrange, 'MaxNumChanges', 10, 'Statistic', 'mean'); % fewer change points may suffice
-                
-                            if parameters.MEP_std_or_chngpts & ipoints
-                                 MEP_onset_index = ipoints(1) + lower_limit_MEP_window; % use findchangepts value
-                            else
-                                 MEP_onset_index = MEP_onset_from_TMS + lower_limit_MEP_window; % use num std of baseline
-                            end
-                
-                            if ipoints
-                                 MEP_offset_index = ipoints(end) + lower_limit_MEP_window;
-                            else
-                                 MEP_offset_index = MEP_onset_index;
-                            end
+                        MEP_onset_index = NaN;
+                        MEP_offset_index = NaN;
+                            
                 end
                   
                trials.preTMS_period_start(i,1) = baseline_lower_bound/parameters.sampling_rate;
@@ -397,20 +359,14 @@ for i = 1:height(trials)
                        
              if ~isnan(CSP_onset_index)
                     offsearchrange =  MEPchannel(CSP_onset_index:end);
-                  %change for 50% of the time
+    %%%%%%%%%%%change for 50% of the time
                     [CSP_offset_time,CSP_offset_index] = CON_Finder(offsearchrange,time,Baseline_EMG,'U',5,1);
                      CSP_offset_index = CSP_offset_index+MEP_onset_index;
-                else 
-                      CSP_onset_index = MEP_offset_index + find(CSP_start_search_range < Baseline_EMG,1); %probably create a function similar to find but for consecutive values
-            
-                      CSP_end_search_range = CSP_signal(CSP_onset_index+1:end);
-            
-                            try
-                      CSP_end_index = MEP_offset_index + find(CSP_end_search_range > Baseline_EMG,1);
-                            catch
-                      CSP_end_index = length(MEPchannel);
-                             end
+             else 
+                      CSP_onset_index = NaN; %probably create a function similar to find but for consecutive values
+                      CSP_offset_index = NaN;
              end
+            
 
             if CSP_onset_index
                 trials.(['ch', num2str(parameters.CSP_channels(chan)) '_CSP_onset'])(i,1)...
